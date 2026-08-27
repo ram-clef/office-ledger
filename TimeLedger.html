@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Time Ledger — Working Hours</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0e14;
+    --panel:#141b24;
+    --panel-2:#1b2430;
+    --line:#283242;
+    --ink:#eef2f7;
+    --muted:#8a94a8;
+    --accent:#2fd98f;
+    --accent-2:#12b87a;
+    --accent-dim:rgba(47,217,143,.14);
+    --c-under:#ffb020;
+    --c-under-dim:rgba(255,176,32,.15);
+    --c-over:#2ee6a6;
+    --c-over-dim:rgba(46,230,166,.15);
+    --c-absent:#ff4d6d;
+    --c-absent-dim:rgba(255,77,109,.15);
+    --c-exact:#8fe9b4;
+    --c-exact-dim:rgba(143,233,180,.16);
+    --c-least:#ff2953;
+    --c-least-dim:rgba(255,41,83,.2);
+    --c-least-glow:rgba(255,41,83,.55);
+    --radius:10px;
+    --bg-grad-1:rgba(47,217,143,.08);
+    --bg-grad-2:rgba(122,110,240,.06);
+    --shadow-ticket:0 30px 60px -25px rgba(0,0,0,.65);
+  }
+  html[data-theme="light"]{
+    --bg:#f4f6f9;
+    --panel:#ffffff;
+    --panel-2:#eef1f6;
+    --line:#dde2ea;
+    --ink:#161c26;
+    --muted:#5b6577;
+    --accent:#0e9e6c;
+    --accent-2:#0a7f57;
+    --accent-dim:rgba(14,158,108,.12);
+    --c-under:#c2760a;
+    --c-under-dim:rgba(194,118,10,.13);
+    --c-over:#0d9e6f;
+    --c-over-dim:rgba(13,158,111,.12);
+    --c-absent:#e0294a;
+    --c-absent-dim:rgba(224,41,74,.12);
+    --c-exact:#2f9e63;
+    --c-exact-dim:rgba(47,158,99,.12);
+    --c-least:#c81e46;
+    --c-least-dim:rgba(200,30,70,.14);
+    --c-least-glow:rgba(200,30,70,.4);
+    --bg-grad-1:rgba(14,158,108,.05);
+    --bg-grad-2:rgba(99,84,214,.045);
+    --shadow-ticket:0 30px 60px -25px rgba(20,20,30,.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;overflow-x:hidden;}
+  html{transition:background-color .2s ease;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, var(--bg-grad-1), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, var(--bg-grad-2), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    transition:background-color .2s ease, color .2s ease;
+  }
+  .theme-toggle{
+    width:36px;height:36px;flex:0 0 auto;border-radius:8px;background:var(--panel);
+    border:1px solid var(--line);color:var(--ink);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:border-color .15s ease, background .15s ease;
+  }
+  .theme-toggle:hover{border-color:#3a4451;background:var(--panel-2);}
+  .theme-toggle svg{display:block;}
+  .theme-toggle .i-sun{display:none;}
+  html[data-theme="light"] .theme-toggle .i-moon{display:none;}
+  html[data-theme="light"] .theme-toggle .i-sun{display:block;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  ::selection{background:var(--accent-dim);color:var(--accent);}
+  a{color:inherit;}
+  button{font-family:inherit;}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  /* ---------- screens ---------- */
+  .screen{display:none;min-height:100vh;}
+  .screen.active{display:flex;flex-direction:column;}
+  @media (prefers-reduced-motion:no-preference){
+    .screen.active{animation:fade .4s ease both;}
+  }
+  @keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+
+  /* ---------- brand mark ---------- */
+  .brandmark{display:flex;align-items:center;gap:10px;}
+  .brandmark .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px rgba(62,207,142,.7);}
+  .brandmark .word{font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.14em;font-size:13px;text-transform:uppercase;color:var(--muted);}
+  .brandmark .word b{color:var(--ink);}
+
+  /* ================= SCREEN 1 — name entry (ticket) ================= */
+  #screen-name{align-items:center;justify-content:center;padding:32px 20px;}
+  .ticket-wrap{width:100%;max-width:430px;}
+  .ticket-brand{margin-bottom:26px;justify-content:center;}
+  .ticket{
+    position:relative;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:38px 34px 30px;
+    box-shadow:var(--shadow-ticket);
+  }
+  .ticket::before,.ticket::after{
+    content:'';position:absolute;top:50%;transform:translateY(-50%);
+    width:26px;height:26px;background:var(--bg);border-radius:50%;
+  }
+  .ticket::before{left:-13px;}
+  .ticket::after{right:-13px;}
+  .ticket-perf{
+    position:absolute;left:26px;right:26px;top:128px;
+    border-top:1.5px dashed var(--line);
+  }
+  .ticket-eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;}
+  .ticket h1{font-size:26px;line-height:1.25;margin:0 0 4px;font-weight:700;letter-spacing:-.01em;}
+  .ticket p.sub{color:var(--muted);font-size:14px;margin:0 0 30px;line-height:1.5;}
+  .barcode{display:flex;gap:2px;align-items:flex-end;height:20px;margin-bottom:22px;opacity:.5;}
+  .barcode i{display:block;background:var(--muted);width:2px;border-radius:1px;}
+  label.field-label{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:600;}
+  .field{
+    width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+    padding:14px 16px;color:var(--ink);font-size:16px;font-family:'JetBrains Mono',monospace;
+  }
+  .field::placeholder{color:#4a5461;}
+  .field:focus{border-color:var(--accent);}
+  .err{color:var(--c-least);font-size:13px;margin-top:8px;display:none;}
+  .btn{
+    appearance:none;border:none;cursor:pointer;border-radius:8px;
+    font-family:'Inter',sans-serif;font-weight:600;font-size:15px;
+    padding:14px 22px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn:disabled{opacity:.6;cursor:default;}
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#052c1e;width:100%;margin-top:22px;box-shadow:0 10px 24px -10px rgba(47,217,143,.5);}
+  .btn-primary:hover{box-shadow:0 14px 30px -8px rgba(47,217,143,.65);transform:translateY(-1px);}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);}
+  .btn-ghost:hover{color:var(--ink);border-color:#3a4451;}
+  .btn-pdf{background:linear-gradient(135deg,var(--panel-2),var(--panel));color:var(--accent);border:1px solid rgba(47,217,143,.4);}
+  .btn-pdf:hover{background:var(--accent-dim);border-color:var(--accent);}
+  .btn-sm{padding:9px 14px;font-size:13px;}
+  .ticket-stub{display:flex;justify-content:space-between;margin-top:24px;font-size:11px;color:#4a5461;font-family:'JetBrains Mono',monospace;letter-spacing:.05em;}
+
+  /* ================= SCREEN 2 — upload ================= */
+  #screen-upload{align-items:center;justify-content:center;padding:32px 20px;}
+  .upload-wrap{width:100%;max-width:520px;text-align:center;}
+  .upload-wrap .brandmark{justify-content:center;margin-bottom:22px;}
+  .upload-wrap h1{font-size:24px;margin:0 0 6px;}
+  .upload-wrap p.sub{color:var(--muted);font-size:14px;margin:0 0 30px;}
+  .dropzone{
+    border:1.5px dashed var(--line);border-radius:16px;background:var(--panel);
+    padding:48px 24px;cursor:pointer;transition:border-color .15s ease, background .15s ease;
+  }
+  .dropzone.drag{border-color:var(--accent);background:var(--accent-dim);}
+  .dropzone .icon{
+    width:52px;height:52px;margin:0 auto 18px;border-radius:50%;
+    background:var(--panel-2);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;color:var(--accent);
+  }
+  .dropzone h3{margin:0 0 6px;font-size:16px;font-weight:600;}
+  .dropzone p{margin:0;color:var(--muted);font-size:13px;}
+  .dropzone .file-types{margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.05em;color:#4a5461;}
+  #fileInput{display:none;}
+  .upload-status{margin-top:20px;font-size:13px;color:var(--muted);min-height:20px;}
+  .upload-status.err{color:var(--c-least);}
+  .back-link{margin-top:26px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+  .back-link:hover{color:var(--ink);}
+
+  /* ================= shared: top nav / header ================= */
+  .top-header{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    padding:20px 32px;border-bottom:1px solid var(--line);position:sticky;top:0;
+    background:var(--bg);background:color-mix(in srgb, var(--bg) 92%, transparent);backdrop-filter:blur(8px);z-index:10;
+  }
+  .top-header .left{display:flex;align-items:center;gap:14px;min-width:0;}
+  .icon-btn{
+    width:36px;height:36px;flex:0 0 auto;border-radius:8px;background:var(--panel);
+    border:1px solid var(--line);color:var(--ink);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:border-color .15s ease, background .15s ease;
+  }
+  .icon-btn:hover{border-color:#3a4451;background:var(--panel-2);}
+  .title-block h2{margin:0;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .title-block p{margin:2px 0 0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .top-header .right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+  .month-select{
+    background:var(--panel);border:1px solid var(--line);color:var(--ink);
+    font-family:'JetBrains Mono',monospace;font-size:12.5px;border-radius:8px;
+    padding:9px 12px;cursor:pointer;
+  }
+  .month-select:focus{border-color:var(--accent);}
+
+  .screen-body{padding:30px 32px 60px;max-width:1180px;margin:0 auto;width:100%;}
+  @media (max-width:860px){
+    .screen-body{padding:22px 18px 50px;}
+    .top-header{padding:16px 18px;}
+  }
+
+  .section-eyebrow{display:flex;align-items:center;gap:10px;margin:34px 0 14px;}
+  .section-eyebrow:first-child{margin-top:0;}
+  .section-eyebrow span{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+  .section-eyebrow::after{content:'';flex:1;border-top:1px solid var(--line);}
+
+  /* ================= stat / metric tiles ================= */
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .stat-tile{
+    position:relative;text-align:left;cursor:pointer;overflow:hidden;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 20px 18px;transition:border-color .15s ease, transform .15s ease, background .15s ease, box-shadow .15s ease;
+  }
+  .stat-tile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line);transition:background .15s ease;}
+  .stat-tile:hover{transform:translateY(-2px);border-color:#3a4451;box-shadow:0 14px 30px -18px rgba(0,0,0,.5);}
+  .stat-tile.avg{cursor:default;}
+  .stat-tile.avg:hover{transform:none;border-color:var(--line);box-shadow:none;}
+  .stat-tile .swatch{width:8px;height:8px;border-radius:50%;margin-bottom:14px;}
+  .stat-tile .count{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:34px;line-height:1;letter-spacing:-.02em;}
+  .stat-tile .label{margin-top:10px;font-size:12.5px;color:var(--muted);font-weight:500;}
+  .stat-tile .hint{margin-top:2px;font-size:11px;color:#4a5461;}
+  .stat-tile[data-cat="under"]::before{background:var(--c-under);}
+  .stat-tile[data-cat="under"] .swatch{background:var(--c-under);box-shadow:0 0 8px rgba(255,176,32,.65);}
+  .stat-tile[data-cat="under"] .count{color:var(--c-under);}
+  .stat-tile[data-cat="over"]::before{background:var(--c-over);}
+  .stat-tile[data-cat="over"] .swatch{background:var(--c-over);box-shadow:0 0 8px rgba(46,230,166,.65);}
+  .stat-tile[data-cat="over"] .count{color:var(--c-over);}
+  .stat-tile[data-cat="absent"]::before{background:var(--c-absent);}
+  .stat-tile[data-cat="absent"] .swatch{background:var(--c-absent);box-shadow:0 0 8px rgba(255,77,109,.65);}
+  .stat-tile[data-cat="absent"] .count{color:var(--c-absent);}
+  .stat-tile.avg::before{background:var(--accent);}
+  .stat-tile.avg .swatch{background:var(--accent);box-shadow:0 0 8px rgba(47,217,143,.65);}
+  .stat-tile.avg .count{color:var(--accent);}
+
+  .report-tile{
+    margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+    background:linear-gradient(90deg, var(--accent-dim), transparent 70%), var(--panel);
+    border:1px solid rgba(47,217,143,.35);border-radius:var(--radius);
+    padding:20px 24px;cursor:pointer;transition:transform .15s ease, border-color .15s ease;
+  }
+  .report-tile:hover{transform:translateY(-2px);border-color:var(--accent);}
+  .report-tile .rt-left{display:flex;align-items:center;gap:16px;min-width:0;}
+  .report-tile .rt-icon{
+    width:42px;height:42px;flex:0 0 auto;border-radius:10px;background:var(--accent-dim);
+    color:var(--accent);display:flex;align-items:center;justify-content:center;
+  }
+  .report-tile h3{margin:0 0 3px;font-size:14.5px;font-weight:700;}
+  .report-tile p{margin:0;font-size:12.5px;color:var(--muted);}
+  .report-tile .rt-count{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent);font-size:15px;white-space:nowrap;}
+  .report-tile .rt-arrow{color:var(--accent);flex:0 0 auto;}
+
+  /* ================= chart + donut panels ================= */
+  .panels-row{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:28px;min-width:0;}
+  .panels-row > *{min-width:0;}
+  .panels-row.two{grid-template-columns:1fr 1fr;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;min-width:0;overflow:hidden;}
+  .panel h3{margin:0 0 2px;font-size:13px;font-weight:600;}
+  .panel .panel-sub{margin:0 0 18px;font-size:12px;color:var(--muted);}
+
+  .chart-scroll{overflow-x:auto;padding-bottom:6px;}
+  .chart-track{position:relative;height:220px;min-width:100%;padding-top:10px;}
+  .threshold-line{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--ink);opacity:.4;z-index:2;pointer-events:none;}
+  .threshold-label{position:absolute;right:0;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:2px 7px;border-radius:5px;transform:translateY(-19px);z-index:3;white-space:nowrap;}
+  .bars{display:flex;align-items:flex-end;height:100%;gap:5px;position:relative;z-index:1;}
+  .bar-col{display:flex;flex-direction:column;align-items:center;width:14px;flex:0 0 auto;height:100%;justify-content:flex-end;}
+  .bar{width:8px;border-radius:3px 3px 0 0;background:var(--muted);min-height:3px;transition:opacity .15s ease, transform .15s ease;}
+  .bar-col:hover .bar{opacity:.8;transform:scaleX(1.15);}
+  .bar[data-cat="under"]{background:var(--c-under);}
+  .bar[data-cat="over"]{background:var(--c-over);}
+  .bar[data-cat="absent"]{background:var(--c-absent);opacity:.55;}
+  .bar.bar-worst{background:var(--c-least)!important;box-shadow:0 0 0 1px var(--c-least), 0 0 10px 1px var(--c-least-glow);opacity:1!important;}
+  .chart-legend{display:flex;gap:18px;margin-top:16px;flex-wrap:wrap;}
+  .chart-legend span{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);}
+  .chart-legend i{width:8px;height:8px;border-radius:2px;display:inline-block;}
+  .chart-empty{color:var(--muted);font-size:13px;padding:60px 10px;text-align:center;}
+
+  .donut-wrap{display:flex;flex-direction:column;align-items:center;}
+  .donut{
+    width:168px;height:168px;border-radius:50%;position:relative;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 12px 28px -14px rgba(0,0,0,.5);
+  }
+  .donut .hole{
+    width:104px;height:104px;border-radius:50%;background:var(--panel);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+  }
+  .donut .hole .n{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;line-height:1;}
+  .donut .hole .l{font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:.04em;text-transform:uppercase;}
+  .donut-legend{width:100%;margin-top:20px;display:flex;flex-direction:column;gap:10px;}
+  .donut-legend .row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;}
+  .donut-legend .row .k{display:flex;align-items:center;gap:8px;color:var(--muted);}
+  .donut-legend .row .k i{width:8px;height:8px;border-radius:2px;}
+  .donut-legend .row .v{font-family:'JetBrains Mono',monospace;font-weight:600;}
+
+  /* ================= tables ================= */
+  .mini-table{width:100%;border-collapse:collapse;}
+  .mini-table th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  .mini-table td{padding:12px 14px;font-size:13.5px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  .mini-table tr:last-child td{border-bottom:none;}
+  .mini-table td.mono-cell{font-family:'JetBrains Mono',monospace;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:'JetBrains Mono',monospace;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+  .badge.up{background:var(--accent-dim);color:var(--accent);}
+  .badge.down{background:var(--c-least-dim);color:var(--c-least);}
+  .badge.flat{background:var(--panel-2);color:var(--muted);}
+  .badge.mark{background:var(--accent-dim);color:var(--accent);margin-left:8px;}
+  .badge.least{background:var(--c-least-dim);color:var(--c-least);margin-left:8px;}
+
+  .extreme-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;}
+  .extreme-list li{display:flex;align-items:center;justify-content:space-between;padding:11px 4px;border-bottom:1px solid var(--line);font-size:13px;}
+  .extreme-list li:last-child{border-bottom:none;}
+  .extreme-list .d{color:var(--ink);font-family:'JetBrains Mono',monospace;}
+  .extreme-list .h{font-family:'JetBrains Mono',monospace;font-weight:600;}
+  .extreme-list .delta{font-size:11px;color:var(--muted);margin-left:8px;font-weight:400;}
+  .extreme-list.shortfall .h{color:var(--c-under);}
+  .extreme-list.overtime .h{color:var(--c-over);}
+  .extreme-list li.worst-day{background:var(--c-least-dim);border-radius:8px;padding-left:10px;padding-right:10px;border-bottom:none;}
+  .extreme-list li.worst-day .h{color:var(--c-least);}
+  .extreme-list li.worst-day .d::after{content:'WORST';margin-left:8px;font-size:9px;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;color:var(--c-least);background:var(--c-least-dim);border:1px solid var(--c-least);padding:1px 6px;border-radius:10px;vertical-align:middle;}
+  .empty-note{color:var(--muted);font-size:13px;padding:10px 4px;}
+
+  .irr-dates{color:var(--muted);font-size:12px;line-height:1.5;}
+
+  .takeaways{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px;}
+  .takeaways li{display:flex;gap:12px;font-size:13.5px;line-height:1.55;color:var(--ink);}
+  .takeaways li .bullet{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent-dim);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;margin-top:1px;}
+  .takeaways li span.hl{color:var(--accent);font-weight:600;}
+  .takeaways li span.hl-bad{color:var(--c-least);font-weight:600;}
+  .takeaways li span.hl-warn{color:var(--c-under);font-weight:600;}
+
+  .table-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+  .table-head{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:10px;}
+  .table-head h3{margin:0;font-size:13px;font-weight:600;}
+  .table-head .count-pill{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);background:var(--panel-2);padding:4px 10px;border-radius:20px;border:1px solid var(--line);}
+  .table-scroll{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;min-width:640px;}
+  thead th{
+    text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;padding:12px 24px;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  tbody td{padding:13px 24px;font-size:13.5px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--panel-2);}
+  td.mono-cell{font-family:'JetBrains Mono',monospace;}
+  .cat-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-family:'JetBrains Mono',monospace;padding:3px 9px 3px 7px;border-radius:20px;}
+  .cat-pill i{width:6px;height:6px;border-radius:50%;}
+  .cat-pill.under{background:var(--c-under-dim);color:var(--c-under);}
+  .cat-pill.under i{background:var(--c-under);}
+  .cat-pill.over{background:var(--c-over-dim);color:var(--c-over);}
+  .cat-pill.over i{background:var(--c-over);}
+  .cat-pill.absent{background:var(--c-absent-dim);color:var(--c-absent);}
+  .cat-pill.absent i{background:var(--c-absent);}
+  .tag-extreme{margin-left:6px;font-size:10px;color:var(--muted);}
+  .remark-cell{color:var(--muted);font-size:12.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;}
+  .empty-row td{text-align:center;color:var(--muted);padding:40px 24px;}
+  .diff-pos{color:var(--c-over);font-weight:600;}
+  .diff-neg{color:var(--c-least);font-weight:600;}
+
+  /* ================= category screen context chips ================= */
+  .chip-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:20px;
+    background:var(--panel);border:1px solid var(--line);font-size:12.5px;color:var(--muted);
+  }
+  .chip i{width:7px;height:7px;border-radius:50%;}
+  .chip.current{border-color:currentColor;background:var(--panel-2);}
+  .chip .v{font-family:'JetBrains Mono',monospace;font-weight:700;}
+  .chip[data-c="under"]{color:var(--c-under);} .chip[data-c="under"] i{background:var(--c-under);}
+  .chip[data-c="over"]{color:var(--c-over);} .chip[data-c="over"] i{background:var(--c-over);}
+  .chip[data-c="absent"]{color:var(--c-absent);} .chip[data-c="absent"] i{background:var(--c-absent);}
+
+  .mini-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px;}
+  .mini-stats.mini-stats-4{grid-template-columns:repeat(4,1fr);}
+  @media (max-width:860px){ .mini-stats.mini-stats-4{grid-template-columns:1fr 1fr;} }
+  .mini-stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;}
+  .mini-stat .v{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:24px;}
+  .mini-stat .l{font-size:12px;color:var(--muted);margin-top:6px;}
+
+  .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px;}
+  .metric-tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 16px;}
+  .metric-tile .v{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:22px;line-height:1.1;}
+  .metric-tile .l{font-size:11.5px;color:var(--muted);margin-top:8px;font-weight:500;}
+
+  /* ================= category context (read-only, no switching) ================= */
+  .cat-context{
+    display:inline-flex;align-items:center;gap:9px;padding:8px 16px;border-radius:20px;
+    background:var(--panel);border:1px solid var(--line);font-size:12.5px;color:var(--muted);margin-bottom:26px;
+  }
+  .cat-context i{width:7px;height:7px;border-radius:50%;}
+  .cat-context b{color:var(--ink);font-weight:700;}
+  .cat-context[data-c="under"]{border-color:rgba(255,176,32,.35);} .cat-context[data-c="under"] i{background:var(--c-under);}
+  .cat-context[data-c="over"]{border-color:rgba(46,230,166,.35);} .cat-context[data-c="over"] i{background:var(--c-over);}
+  .cat-context[data-c="absent"]{border-color:rgba(255,77,109,.35);} .cat-context[data-c="absent"] i{background:var(--c-absent);}
+
+  /* ================= segmented filter (full report: all / over / under / absent) ================= */
+  .segmented{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px;}
+  .segmented button{
+    appearance:none;border:none;background:transparent;color:var(--muted);cursor:pointer;
+    font-family:'Inter',sans-serif;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:7px;
+    transition:background .15s ease,color .15s ease;
+  }
+  .segmented button:hover{color:var(--ink);}
+  .segmented button.active{background:var(--panel-2);color:var(--ink);}
+  .segmented button.active[data-f="under"]{color:var(--c-under);}
+  .segmented button.active[data-f="over"]{color:var(--c-over);}
+  .segmented button.active[data-f="absent"]{color:var(--c-absent);}
+  .segmented button.active[data-f="all"]{color:var(--accent);}
+  .filters-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:22px;}
+
+  /* draggable chart scroller */
+  .chart-scroll{cursor:grab;}
+  .chart-scroll.dragging{cursor:grabbing;user-select:none;}
+
+  .charts-two{display:grid;grid-template-columns:1fr 1.6fr;gap:14px;min-width:0;}
+  .charts-two > *{min-width:0;}
+  @media (max-width:860px){ .charts-two{grid-template-columns:1fr;} }
+
+  footer.app-footer{
+    text-align:center;padding:26px 20px 34px;color:#4a5461;font-size:12px;
+    font-family:'JetBrains Mono',monospace;letter-spacing:.03em;
+  }
+  footer.app-footer b{color:var(--muted);}
+
+  @media (max-width:860px){
+    .stats-grid{grid-template-columns:repeat(2,1fr);}
+    .panels-row{grid-template-columns:1fr;}
+    .panels-row.two{grid-template-columns:1fr;}
+    .mini-stats{grid-template-columns:1fr;}
+    .metrics-grid{grid-template-columns:repeat(2,1fr);}
+    .report-tile{flex-wrap:wrap;}
+  }
+  @media (max-width:480px){
+    .ticket{padding:30px 22px 24px;}
+    .stats-grid{grid-template-columns:1fr 1fr;gap:10px;}
+    .stat-tile .count{font-size:28px;}
+    .metrics-grid{grid-template-columns:1fr 1fr;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== SCREEN 1 — NAME ENTRY ===================== -->
+<section class="screen active" id="screen-name">
+  <div class="ticket-wrap">
+    <div class="brandmark ticket-brand">
+      <span class="dot"></span>
+      <span class="word">TIME <b>LEDGER</b></span>
+    </div>
+    <form class="ticket" id="nameForm" novalidate>
+      <div class="ticket-eyebrow">Access ticket</div>
+      <h1>Whose hours are<br>we reading today?</h1>
+      <p class="sub">Enter your name, then bring in your attendance sheet on the next screen.</p>
+      <div class="ticket-perf"></div>
+      <div style="margin-top:34px;">
+        <label class="field-label" for="empName">Employee name</label>
+        <input class="field" id="empName" type="text" placeholder="e.g. RAM" autocomplete="off">
+        <div class="err" id="nameErr">Enter a name to continue.</div>
+      </div>
+      <div class="barcode" id="barcode" aria-hidden="true"></div>
+      <button type="submit" class="btn btn-primary">Continue →</button>
+      <div class="ticket-stub">
+        <span>NO. <span id="ticketNo">0000</span></span>
+        <span>VALID FOR ONE SESSION</span>
+      </div>
+    </form>
+  </div>
+</section>
+
+<!-- ===================== SCREEN 2 — UPLOAD ===================== -->
+<section class="screen" id="screen-upload">
+  <div class="upload-wrap">
+    <div class="brandmark">
+      <span class="dot"></span>
+      <span class="word">TIME <b>LEDGER</b></span>
+    </div>
+    <h1 id="uploadGreeting">Hi there</h1>
+    <p class="sub">Bring in your attendance export and we'll build the dashboard.</p>
+    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Browse for attendance file">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </div>
+      <h3>Drop your sheet here</h3>
+      <p>or click to browse your files</p>
+      <div class="file-types">.XLS · .XLSX</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xls,.xlsx">
+    <div class="upload-status" id="uploadStatus"></div>
+    <button class="back-link" id="backToName" type="button">← back</button>
+  </div>
+</section>
+
+<!-- ===================== SCREEN 3 — DASHBOARD (overview) ===================== -->
+<section class="screen" id="screen-dashboard">
+  <div class="top-header">
+    <div class="left">
+      <div class="title-block">
+        <h2 id="dashName">—</h2>
+        <p id="dashRange">—</p>
+      </div>
+    </div>
+    <div class="right">
+      <button class="theme-toggle" id="themeToggleDash" type="button" aria-label="Toggle light and dark theme">
+        <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <button class="btn btn-ghost btn-sm" id="newUpload" type="button">Upload another sheet</button>
+    </div>
+  </div>
+
+  <div class="screen-body">
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-tile" data-cat="under" tabindex="0">
+        <div class="swatch"></div>
+        <div class="count mono" id="countUnder">0</div>
+        <div class="label">Under 9h 30m</div>
+        <div class="hint">Click to open detail →</div>
+      </div>
+      <div class="stat-tile" data-cat="over" tabindex="0">
+        <div class="swatch"></div>
+        <div class="count mono" id="countOver">0</div>
+        <div class="label">Over 9h 30m</div>
+        <div class="hint">Click to open detail →</div>
+      </div>
+      <div class="stat-tile" data-cat="absent" tabindex="0">
+        <div class="swatch"></div>
+        <div class="count mono" id="countAbsent">0</div>
+        <div class="label">Absent / not punched</div>
+        <div class="hint">Click to open detail →</div>
+      </div>
+      <div class="stat-tile avg">
+        <div class="swatch"></div>
+        <div class="count mono" id="avgHours">0:00</div>
+        <div class="label">Average per day</div>
+        <div class="hint" id="avgHint">Across logged days</div>
+      </div>
+    </div>
+
+    <div class="report-tile" id="reportTile" tabindex="0">
+      <div class="rt-left">
+        <div class="rt-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17V9M13 17V5M17 17v-4"/><path d="M3 17h18"/></svg>
+        </div>
+        <div>
+          <h3>Full report — every record</h3>
+          <p>Date-wise log, differences from target, status and a PDF export</p>
+        </div>
+      </div>
+      <div class="rt-left" style="gap:14px;">
+        <span class="rt-count" id="reportCount">0 rows</span>
+        <span class="rt-arrow">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </span>
+      </div>
+    </div>
+
+    <div class="section-eyebrow" style="margin-top:30px;"><span>Charts</span></div>
+    <div class="charts-two" style="margin-bottom:28px;">
+      <div class="panel">
+        <h3>Split by category</h3>
+        <p class="panel-sub">Share of days in view</p>
+        <div class="donut-wrap" id="dashDonutWrap">
+          <div class="donut"><div class="hole"><div class="n">0</div><div class="l">days</div></div></div>
+          <div class="donut-legend"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Daily work hours</h3>
+        <p class="panel-sub">Dashed line marks the 9h 30m target · drag to scroll</p>
+        <div class="chart-scroll">
+          <div class="chart-track" id="dashChartTrack">
+            <div class="threshold-line"></div>
+            <span class="threshold-label">9:30 target</span>
+            <div class="bars"></div>
+          </div>
+        </div>
+        <div class="chart-legend">
+          <span><i style="background:var(--c-under)"></i>Under</span>
+          <span><i style="background:var(--c-over)"></i>Over</span>
+          <span><i style="background:var(--c-absent)"></i>Absent</span>
+          <span><i style="background:var(--c-least)"></i>Least hours (worst day)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-eyebrow"><span>Month-wise breakdown</span></div>
+    <div class="panel" style="padding:0;overflow:hidden;">
+      <div class="table-scroll">
+        <table class="mini-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Days logged</th>
+              <th>Avg hours</th>
+              <th>Below 9:30</th>
+              <th>9:30 or more</th>
+              <th>Trend</th>
+            </tr>
+          </thead>
+          <tbody id="monthBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-eyebrow"><span>Day-level extremes</span></div>
+    <div class="panels-row two">
+      <div class="panel">
+        <h3>Biggest shortfalls</h3>
+        <p class="panel-sub">Days furthest below the 9:30 target</p>
+        <ul class="extreme-list shortfall" id="shortfallList"></ul>
+      </div>
+      <div class="panel">
+        <h3>Most overtime</h3>
+        <p class="panel-sub">Days furthest past the 9:30 target</p>
+        <ul class="extreme-list overtime" id="overtimeList"></ul>
+      </div>
+    </div>
+
+    <div class="section-eyebrow"><span>Irregularities</span></div>
+    <div class="panel" style="padding:0;overflow:hidden;">
+      <div class="table-scroll">
+        <table class="mini-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Count</th>
+              <th>Dates</th>
+            </tr>
+          </thead>
+          <tbody id="irregularBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-eyebrow"><span>Key takeaways</span></div>
+    <div class="panel">
+      <ul class="takeaways" id="takeaways"></ul>
+    </div>
+  </div>
+
+  <footer class="app-footer">Designed by <b>Pruthviraj</b></footer>
+</section>
+
+<!-- ===================== SCREEN 4 — CATEGORY DETAIL ===================== -->
+<section class="screen" id="screen-category">
+  <div class="top-header">
+    <div class="left">
+      <button class="icon-btn" id="catBack" type="button" aria-label="Back to dashboard">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <div class="title-block">
+        <h2 id="catTitle">—</h2>
+        <p id="catSub">—</p>
+      </div>
+    </div>
+    <div class="right">
+      <select class="month-select" id="catMonthSelect" aria-label="Filter by month"></select>
+      <button class="theme-toggle" id="themeToggleCat" type="button" aria-label="Toggle light and dark theme">
+        <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="screen-body">
+    <div class="cat-context" id="catContext"><i></i>Showing only <b id="catContextLabel">—</b> days</div>
+
+    <div class="mini-stats mini-stats-4">
+      <div class="mini-stat"><div class="v" id="catCount">0</div><div class="l">Days in this view</div></div>
+      <div class="mini-stat"><div class="v" id="catPct">0%</div><div class="l">Share of all logged days</div></div>
+      <div class="mini-stat"><div class="v" id="catAvg">—</div><div class="l">Average hours in this category</div></div>
+      <div class="mini-stat"><div class="v" id="catVariance">—</div><div class="l">Total hours over / short of target</div></div>
+    </div>
+
+    <div class="section-eyebrow"><span>Chart</span></div>
+    <div class="panel" style="margin-bottom:28px;">
+      <h3 id="catChartTitle">Daily hours</h3>
+      <p class="panel-sub">Dashed line marks the 9h 30m target</p>
+      <div class="chart-scroll">
+        <div class="chart-track" id="catChartTrack">
+          <div class="threshold-line"></div>
+          <span class="threshold-label">9:30 target</span>
+          <div class="bars"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-eyebrow"><span>Dates</span></div>
+    <div class="table-panel">
+      <div class="table-head">
+        <h3 id="catTableTitle">Records</h3>
+        <span class="count-pill" id="catTableCount">0 rows</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Shift</th><th>Login</th><th>Logout</th><th>Work hours</th><th>Remarks</th></tr>
+          </thead>
+          <tbody id="catTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SCREEN 5 — FULL REPORT / ALL DATA ===================== -->
+<section class="screen" id="screen-alldata">
+  <div class="top-header">
+    <div class="left">
+      <button class="icon-btn" id="allBack" type="button" aria-label="Back to dashboard">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <div class="title-block">
+        <h2 id="allTitle">Full report</h2>
+        <p id="allSub">—</p>
+      </div>
+    </div>
+    <div class="right">
+      <select class="month-select" id="allMonthSelect" aria-label="Filter by month"></select>
+      <button class="theme-toggle" id="themeToggleAll" type="button" aria-label="Toggle light and dark theme">
+        <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <button class="btn btn-pdf btn-sm" id="downloadPdfBtn" type="button">⬇ Download PDF</button>
+    </div>
+  </div>
+
+  <div class="screen-body">
+    <div class="metrics-grid" id="metricsGrid">
+      <div class="metric-tile"><div class="v" id="mTotal">0</div><div class="l">Total days logged</div></div>
+      <div class="metric-tile"><div class="v" id="mAvg">0:00</div><div class="l">Average / day</div></div>
+      <div class="metric-tile"><div class="v" style="color:var(--muted);">9:30</div><div class="l">Baseline target</div></div>
+      <div class="metric-tile"><div class="v" id="mShortage" style="color:var(--c-under);">0</div><div class="l">Shortage days (under)</div></div>
+      <div class="metric-tile"><div class="v" id="mOver" style="color:var(--c-over);">0</div><div class="l">Overworked days</div></div>
+      <div class="metric-tile"><div class="v" id="mAbsent" style="color:var(--c-absent);">0</div><div class="l">Absent / not punched</div></div>
+      <div class="metric-tile"><div class="v" id="mBest" style="color:var(--accent);font-size:16px;">—</div><div class="l">Best day (most hours)</div></div>
+      <div class="metric-tile"><div class="v" id="mWorst" style="color:var(--c-least);font-size:16px;">—</div><div class="l">Worst day (least hours)</div></div>
+    </div>
+
+    <div class="section-eyebrow"><span>Filter</span></div>
+    <div class="filters-row">
+      <div class="segmented" id="allCatFilter" role="group" aria-label="Filter by category">
+        <button type="button" class="active" data-f="all">All</button>
+        <button type="button" data-f="over">Over</button>
+        <button type="button" data-f="under">Under</button>
+        <button type="button" data-f="absent">Absent</button>
+      </div>
+      <span class="count-pill" id="allFilterCount" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);background:var(--panel-2);padding:6px 12px;border-radius:20px;border:1px solid var(--line);">0 rows</span>
+    </div>
+
+    <div class="section-eyebrow"><span>Charts</span></div>
+    <div class="charts-two" id="allChartsCapture" style="margin-bottom:28px;">
+      <div class="panel">
+        <h3>Split by category</h3>
+        <p class="panel-sub">Share of days in view</p>
+        <div class="donut-wrap" id="allDonutWrap">
+          <div class="donut"><div class="hole"><div class="n">0</div><div class="l">days</div></div></div>
+          <div class="donut-legend"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="allChartPanel">
+        <h3>Daily work hours — full range</h3>
+        <p class="panel-sub" id="allChartSub">Dashed line marks the 9h 30m target · drag to scroll</p>
+        <div class="chart-scroll" id="allChartScroll">
+          <div class="chart-track" id="allChartTrack">
+            <div class="threshold-line"></div>
+            <span class="threshold-label">9:30 target</span>
+            <div class="bars"></div>
+          </div>
+        </div>
+        <div class="chart-legend">
+          <span><i style="background:var(--c-under)"></i>Under</span>
+          <span><i style="background:var(--c-over)"></i>Over</span>
+          <span><i style="background:var(--c-absent)"></i>Absent</span>
+          <span><i style="background:var(--c-least)"></i>Least hours (worst day)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-eyebrow"><span>Every record</span></div>
+    <div class="table-panel">
+      <div class="table-head">
+        <h3>Date-wise log</h3>
+        <span class="count-pill" id="allTableCount">0 rows</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Shift</th><th>Login</th><th>Logout</th><th>Work hours</th><th>Difference</th><th>Status</th><th>Remarks</th></tr>
+          </thead>
+          <tbody id="allTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer class="app-footer">Designed by <b>Pruthviraj</b></footer>
+</section>
+
+<script>
+(function(){
+  "use strict";
+
+  var THRESHOLD = 9*60+30; // 570 minutes
+  var MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var CAT_LABEL = { under:"Under 9:30 hrs", over:"Over 9:30 hrs", absent:"Absent / not punched" };
+
+  var state = {
+    name: "",
+    rows: [],
+    months: [],
+    catMonth: "all",
+    allMonth: "all",
+    allCategory: "all",
+    activeCategory: null
+  };
+
+  /* ---------- screen navigation ---------- */
+  function showScreen(id){
+    document.querySelectorAll(".screen").forEach(function(s){ s.classList.remove("active"); });
+    document.getElementById(id).classList.add("active");
+    window.scrollTo(0,0);
+  }
+
+  /* ---------- ticket number + decorative barcode ---------- */
+  (function setTicketNo(){
+    var n;
+    do { n = Math.floor(1000 + Math.random()*9000); } while (n === 3715);
+    document.getElementById("ticketNo").textContent = String(n);
+  })();
+
+  /* ---------- theme toggle (light / dark) ---------- */
+  (function initTheme(){
+    var saved = null;
+    try { saved = localStorage.getItem("tl-theme"); } catch(e){}
+    var initial = saved || (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    document.documentElement.setAttribute("data-theme", initial);
+
+    function toggle(){
+      var cur = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", cur);
+      try { localStorage.setItem("tl-theme", cur); } catch(e){}
+    }
+    ["themeToggleDash","themeToggleCat","themeToggleAll"].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("click", toggle);
+    });
+  })();
+
+  /* ---------- drag-to-scroll for horizontally scrollable charts ---------- */
+  (function initDragScroll(){
+    document.querySelectorAll(".chart-scroll").forEach(function(el){
+      var isDown = false, startX = 0, startScroll = 0, moved = false;
+      el.addEventListener("mousedown", function(e){
+        isDown = true; moved = false;
+        startX = e.pageX; startScroll = el.scrollLeft;
+        el.classList.add("dragging");
+      });
+      window.addEventListener("mouseup", function(){
+        isDown = false; el.classList.remove("dragging");
+      });
+      window.addEventListener("mousemove", function(e){
+        if (!isDown) return;
+        var dx = e.pageX - startX;
+        if (Math.abs(dx) > 3) moved = true;
+        el.scrollLeft = startScroll - dx;
+      });
+      el.addEventListener("click", function(e){
+        if (moved){ e.preventDefault(); e.stopPropagation(); }
+      }, true);
+      el.addEventListener("touchstart", function(e){
+        var t = e.touches[0];
+        isDown = true; startX = t.pageX; startScroll = el.scrollLeft;
+      }, {passive:true});
+      el.addEventListener("touchmove", function(e){
+        if (!isDown) return;
+        var t = e.touches[0];
+        el.scrollLeft = startScroll - (t.pageX - startX);
+      }, {passive:true});
+      el.addEventListener("touchend", function(){ isDown = false; });
+    });
+  })();
+  (function buildBarcode(){
+    var el = document.getElementById("barcode");
+    var html = "";
+    for (var i=0;i<46;i++){
+      var w = (i % 7 === 0) ? 3 : 2;
+      var h = 8 + Math.floor(Math.random()*12);
+      html += '<i style="width:'+w+'px;height:'+h+'px;"></i>';
+    }
+    el.innerHTML = html;
+  })();
+
+  /* ---------- screen 1: name entry ---------- */
+  document.getElementById("nameForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var val = document.getElementById("empName").value.trim();
+    var err = document.getElementById("nameErr");
+    if (!val){
+      err.style.display = "block";
+      document.getElementById("empName").focus();
+      return;
+    }
+    err.style.display = "none";
+    state.name = val;
+    document.getElementById("uploadGreeting").textContent = "Hi, " + val;
+    document.getElementById("uploadStatus").textContent = "";
+    document.getElementById("uploadStatus").className = "upload-status";
+    showScreen("screen-upload");
+  });
+
+  document.getElementById("backToName").addEventListener("click", function(){
+    showScreen("screen-name");
+  });
+
+  document.getElementById("newUpload").addEventListener("click", function(){
+    document.getElementById("uploadStatus").textContent = "";
+    document.getElementById("uploadStatus").className = "upload-status";
+    showScreen("screen-upload");
+  });
+
+  /* ---------- screen 2: upload ---------- */
+  var dropzone = document.getElementById("dropzone");
+  var fileInput = document.getElementById("fileInput");
+
+  dropzone.addEventListener("click", function(){ fileInput.click(); });
+  dropzone.addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.key === " "){ e.preventDefault(); fileInput.click(); }
+  });
+  ["dragenter","dragover"].forEach(function(evt){
+    dropzone.addEventListener(evt, function(e){
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.add("drag");
+    });
+  });
+  ["dragleave","drop"].forEach(function(evt){
+    dropzone.addEventListener(evt, function(e){
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.remove("drag");
+    });
+  });
+  dropzone.addEventListener("drop", function(e){
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0];
+    if (f) handleFile(f);
+  });
+
+  function setStatus(msg, isErr){
+    var el = document.getElementById("uploadStatus");
+    el.textContent = msg;
+    el.className = "upload-status" + (isErr ? " err" : "");
+  }
+
+  function handleFile(file){
+    setStatus("Reading " + file.name + " …", false);
+    var reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        var data = new Uint8Array(e.target.result);
+        var wb = XLSX.read(data, {type:"array"});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+        var parsed = parseSheet(rows);
+        if (!parsed.length){
+          setStatus("Couldn't find any dated rows in this sheet. Make sure it's the attendance export with Date, Shift, First IN, Last OUT, Work Hours columns.", true);
+          return;
+        }
+        state.rows = parsed;
+        state.months = buildMonthsList(parsed);
+        state.catMonth = "all"; state.allMonth = "all"; state.allCategory = "all";
+        populateMonthSelect(document.getElementById("catMonthSelect"), state.months, "all");
+        populateMonthSelect(document.getElementById("allMonthSelect"), state.months, "all");
+        renderDashboard();
+        showScreen("screen-dashboard");
+      }catch(err){
+        setStatus("Couldn't read this file. Make sure it's a valid .xls or .xlsx attendance export and try again.", true);
+      }
+    };
+    reader.onerror = function(){
+      setStatus("Something went wrong reading that file. Try again.", true);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  /* ---------- parsing ---------- */
+  function parseHM(s){
+    if (!s) return null;
+    var parts = String(s).trim().split(":");
+    if (parts.length !== 2) return null;
+    var h = parseInt(parts[0],10), m = parseInt(parts[1],10);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h*60+m;
+  }
+
+  function parseDMY(s){
+    var parts = String(s).trim().split(/[\/\-]/);
+    if (parts.length !== 3) return null;
+    var d = parseInt(parts[0],10), mo = parseInt(parts[1],10), y = parseInt(parts[2],10);
+    if (!d || !mo || !y) return null;
+    return new Date(y, mo-1, d);
+  }
+
+  function fmtDate(dateObj){
+    if (!dateObj) return "-";
+    return String(dateObj.getDate()).padStart(2,"0") + " " + MONTH_NAMES[dateObj.getMonth()] + " " + dateObj.getFullYear();
+  }
+
+  function fmtHM(min){
+    if (min === null || min === undefined || isNaN(min)) return "-";
+    var sign = min < 0 ? "-" : "";
+    min = Math.abs(min);
+    var h = Math.floor(min/60), m = min % 60;
+    return sign + h + ":" + String(m).padStart(2,"0");
+  }
+
+  function looksLikeHeader(row){
+    var first = String(row[0]||"").toLowerCase();
+    return first.indexOf("date") !== -1;
+  }
+
+  function parseSheet(rows){
+    var out = [];
+    for (var i=0;i<rows.length;i++){
+      var r = rows[i];
+      if (!r || !r.length) continue;
+      if (i === 0 && looksLikeHeader(r)) continue;
+      var dateStr = r[0];
+      if (!dateStr) continue;
+      var dateObj = parseDMY(dateStr);
+      if (!dateObj) continue;
+
+      var shift = r[1] || "";
+      var inT = r[2] || "";
+      var outT = r[3] || "";
+      var workT = r[4] || "";
+      var remark = r[5] || "";
+      var workMin = parseHM(workT);
+
+      var category;
+      if (workMin === null) category = "absent";
+      else if (workMin < THRESHOLD) category = "under";
+      else category = "over";
+
+      out.push({
+        dateObj: dateObj,
+        dateStr: fmtDate(dateObj),
+        monthKey: dateObj.getFullYear() + "-" + String(dateObj.getMonth()).padStart(2,"0"),
+        shift: shift || "-",
+        inT: inT || "-",
+        outT: outT || "-",
+        workT: workT || "-",
+        workMin: workMin,
+        remark: remark || "",
+        category: category
+      });
+    }
+    out.sort(function(a,b){ return a.dateObj - b.dateObj; });
+    return out;
+  }
+
+  /* ---------- month helpers ---------- */
+  function buildMonthsList(rows){
+    var seen = {}; var order = [];
+    rows.forEach(function(r){
+      if (!seen[r.monthKey]){
+        seen[r.monthKey] = true;
+        order.push({ key:r.monthKey, label: MONTH_NAMES[r.dateObj.getMonth()]+" "+r.dateObj.getFullYear() });
+      }
+    });
+    return order;
+  }
+
+  function populateMonthSelect(selectEl, months, current){
+    var html = '<option value="all">All months</option>';
+    months.forEach(function(m){
+      html += '<option value="'+m.key+'">'+m.label+'</option>';
+    });
+    selectEl.innerHTML = html;
+    selectEl.value = current || "all";
+  }
+
+  function filterByMonth(rows, key){
+    if (!key || key === "all") return rows;
+    return rows.filter(function(r){ return r.monthKey === key; });
+  }
+
+  function monthLabelFor(key){
+    if (!key || key === "all") return null;
+    var found = state.months.filter(function(m){ return m.key === key; })[0];
+    return found ? found.label : null;
+  }
+
+  function pct(n, total){ return total ? Math.round(n/total*1000)/10 : 0; }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function bucket(rows){
+    var under = rows.filter(function(r){ return r.category==="under"; });
+    var over = rows.filter(function(r){ return r.category==="over"; });
+    var absent = rows.filter(function(r){ return r.category==="absent"; });
+    var worked = rows.filter(function(r){ return r.workMin!==null; });
+    var avgMin = worked.length ? Math.round(worked.reduce(function(a,r){ return a+r.workMin; },0)/worked.length) : 0;
+    return {under:under, over:over, absent:absent, worked:worked, avgMin:avgMin};
+  }
+
+  /* ---------- generic chart + donut (scoped to a root element, reusable across screens) ---------- */
+  function buildChart(trackEl, rows){
+    var barsEl = trackEl.querySelector(".bars");
+    var lineEl = trackEl.querySelector(".threshold-line");
+    var labelEl = trackEl.querySelector(".threshold-label");
+
+    if (!rows.length){
+      trackEl.style.height = "160px";
+      lineEl.style.display = "none";
+      if (labelEl) labelEl.style.display = "none";
+      barsEl.innerHTML = '<div class="chart-empty">No data for this selection.</div>';
+      barsEl.style.height = "auto";
+      return;
+    }
+    lineEl.style.display = "";
+    if (labelEl) labelEl.style.display = "";
+
+    var worked = rows.filter(function(r){ return r.workMin !== null; });
+    var maxMin = Math.max(THRESHOLD, worked.reduce(function(m,r){ return Math.max(m, r.workMin); }, 0));
+    maxMin = Math.ceil(maxMin * 1.12);
+    var chartH = 190;
+    trackEl.style.height = (chartH + 30) + "px";
+
+    var thresholdTop = chartH - (THRESHOLD / maxMin * chartH) + 10;
+    lineEl.style.top = thresholdTop + "px";
+    if (labelEl) labelEl.style.top = thresholdTop + "px";
+
+    // the single worst day (least hours) in this chart's scope is always flagged red,
+    // regardless of its under/over/absent category
+    var worstRow = worked.length > 1 ? worked.reduce(function(a,r){ return r.workMin < a.workMin ? r : a; }) : null;
+
+    var barsHtml = "";
+    rows.forEach(function(r){
+      var h = r.workMin !== null ? Math.max(3, Math.round(r.workMin / maxMin * chartH)) : 6;
+      var isWorst = worstRow && r === worstRow;
+      var title = r.dateStr + " · " + (r.workMin !== null ? fmtHM(r.workMin) : (r.remark || "No punch")) + (isWorst ? " · Worst day" : "");
+      barsHtml += '<div class="bar-col" title="'+escapeHtml(title)+'">' +
+                    '<div class="bar'+(isWorst ? " bar-worst" : "")+'" data-cat="'+r.category+'" style="height:'+h+'px;"></div>' +
+                  '</div>';
+    });
+    barsEl.innerHTML = barsHtml;
+    barsEl.style.height = chartH + "px";
+  }
+
+  function buildDonut(wrapEl, total, under, over, absent){
+    var donutEl = wrapEl.querySelector(".donut");
+    var totalEl = wrapEl.querySelector(".hole .n");
+    var legendEl = wrapEl.querySelector(".donut-legend");
+    totalEl.textContent = total;
+    if (!total){
+      donutEl.style.background = "var(--panel-2)";
+      legendEl.innerHTML = "";
+      return;
+    }
+    var uPct = under/total*100;
+    var oPct = over/total*100;
+    var seg1 = uPct;
+    var seg2 = uPct + oPct;
+    donutEl.style.background =
+      "conic-gradient(var(--c-under) 0% " + seg1 + "%, var(--c-over) " + seg1 + "% " + seg2 + "%, var(--c-absent) " + seg2 + "% 100%)";
+
+    var legend = [
+      {label:"Under 9h30m", val:under, color:"var(--c-under)"},
+      {label:"Over 9h30m", val:over, color:"var(--c-over)"},
+      {label:"Absent", val:absent, color:"var(--c-absent)"}
+    ];
+    legendEl.innerHTML = legend.map(function(l){
+      return '<div class="row"><span class="k"><i style="background:'+l.color+'"></i>'+l.label+'</span><span class="v">'+l.val+'</span></div>';
+    }).join("");
+  }
+
+  /* ================= DASHBOARD (overview — always full range, no month filter here) ================= */
+  function renderDashboard(){
+    var rows = state.rows;
+    var b = bucket(rows);
+
+    document.getElementById("dashName").textContent = state.name + "’s Time Ledger";
+    var rangeTxt = rows.length
+      ? rows[0].dateStr + " – " + rows[rows.length-1].dateStr + " · " + rows.length + " days logged"
+      : "No data";
+    document.getElementById("dashRange").textContent = rangeTxt;
+
+    document.getElementById("countUnder").textContent = b.under.length;
+    document.getElementById("countOver").textContent = b.over.length;
+    document.getElementById("countAbsent").textContent = b.absent.length;
+    document.getElementById("avgHours").textContent = fmtHM(b.avgMin);
+    document.getElementById("avgHint").textContent = "Across " + b.worked.length + " logged day" + (b.worked.length===1?"":"s");
+    document.getElementById("reportCount").textContent = rows.length + " total rows";
+
+    buildDonut(document.getElementById("dashDonutWrap"), rows.length, b.under.length, b.over.length, b.absent.length);
+    buildChart(document.getElementById("dashChartTrack"), rows);
+    buildMonthly(rows);
+    buildExtremes(b.under, b.over);
+    buildIrregularities(b.absent);
+    buildTakeaways(rows, b.under, b.over, b.absent, b.worked, b.avgMin);
+  }
+
+  document.getElementById("statsGrid").addEventListener("click", function(e){
+    var tile = e.target.closest(".stat-tile[data-cat]");
+    if (!tile) return;
+    openCategory(tile.dataset.cat);
+  });
+  document.getElementById("statsGrid").addEventListener("keydown", function(e){
+    if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("stat-tile") && e.target.dataset.cat){
+      e.preventDefault();
+      openCategory(e.target.dataset.cat);
+    }
+  });
+  document.getElementById("reportTile").addEventListener("click", openAllData);
+  document.getElementById("reportTile").addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.key === " "){ e.preventDefault(); openAllData(); }
+  });
+
+  /* ---------- month-wise breakdown (dashboard, always full range) ---------- */
+  function buildMonthly(rows){
+    var byMonth = {}; var order = [];
+    rows.forEach(function(r){
+      if (!byMonth[r.monthKey]){
+        byMonth[r.monthKey] = { label: MONTH_NAMES[r.dateObj.getMonth()] + " " + r.dateObj.getFullYear(), rows:[] };
+        order.push(r.monthKey);
+      }
+      byMonth[r.monthKey].rows.push(r);
+    });
+
+    var stats = order.map(function(key){
+      var m = byMonth[key];
+      var worked = m.rows.filter(function(r){ return r.workMin !== null; });
+      var under = m.rows.filter(function(r){ return r.category === "under"; }).length;
+      var over = m.rows.filter(function(r){ return r.category === "over"; }).length;
+      var avg = worked.length ? Math.round(worked.reduce(function(a,r){ return a+r.workMin; },0) / worked.length) : null;
+      return { label:m.label, logged:worked.length, avg:avg, under:under, over:over };
+    });
+
+    var best = null, worst = null;
+    stats.forEach(function(s, i){
+      if (s.avg === null) return;
+      if (best === null || s.avg > stats[best].avg) best = i;
+      if (worst === null || s.avg < stats[worst].avg) worst = i;
+    });
+
+    var html = "";
+    stats.forEach(function(s, i){
+      var trendBadge = '<span class="badge flat">baseline</span>';
+      if (i > 0 && stats[i-1].avg !== null && s.avg !== null){
+        var diff = s.avg - stats[i-1].avg;
+        if (diff > 5) trendBadge = '<span class="badge up">▲ improving</span>';
+        else if (diff < -5) trendBadge = '<span class="badge down">▼ declining</span>';
+        else trendBadge = '<span class="badge flat">steady</span>';
+      }
+      var mark = "";
+      if (stats.length > 1 && i === best) mark = '<span class="badge mark">best</span>';
+      else if (stats.length > 1 && i === worst) mark = '<span class="badge down" style="margin-left:8px;">watch</span>';
+      html += '<tr>' +
+        '<td>'+s.label+mark+'</td>' +
+        '<td class="mono-cell">'+s.logged+'</td>' +
+        '<td class="mono-cell">'+(s.avg!==null ? fmtHM(s.avg) : "—")+'</td>' +
+        '<td class="mono-cell" style="color:var(--c-under);">'+s.under+'</td>' +
+        '<td class="mono-cell" style="color:var(--c-over);">'+s.over+'</td>' +
+        '<td>'+trendBadge+'</td>' +
+      '</tr>';
+    });
+    document.getElementById("monthBody").innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No data</td></tr>';
+  }
+
+  function buildExtremes(under, over){
+    var shortfalls = under.slice().sort(function(a,b){ return a.workMin - b.workMin; }).slice(0,5);
+    var overtimes = over.slice().sort(function(a,b){ return b.workMin - a.workMin; }).slice(0,5);
+
+    var sHtml = shortfalls.map(function(r, i){
+      var delta = THRESHOLD - r.workMin;
+      return '<li'+(i===0 ? ' class="worst-day"' : '')+'><span class="d">'+r.dateStr+'</span><span><span class="h">'+fmtHM(r.workMin)+'</span><span class="delta">-'+fmtHM(delta)+'</span></span></li>';
+    }).join("");
+    document.getElementById("shortfallList").innerHTML = sHtml || '<div class="empty-note">No shortfall days.</div>';
+
+    var oHtml = overtimes.map(function(r){
+      var delta = r.workMin - THRESHOLD;
+      return '<li><span class="d">'+r.dateStr+'</span><span><span class="h">'+fmtHM(r.workMin)+'</span><span class="delta">+'+fmtHM(delta)+'</span></span></li>';
+    }).join("");
+    document.getElementById("overtimeList").innerHTML = oHtml || '<div class="empty-note">No overtime days.</div>';
+  }
+
+  function irregularSubtype(r){
+    var rem = (r.remark || "").toLowerCase();
+    if (rem.indexOf("no punches") !== -1) return "No punches available";
+    if (rem.indexOf("not in pair") !== -1) return "Punches not in pair";
+    if (r.inT !== "-" && r.outT === "-") return "Missing OUT punch";
+    if (r.outT !== "-" && r.inT === "-") return "Missing IN punch";
+    return "Other / unspecified";
+  }
+
+  function buildIrregularities(absent){
+    var groups = {}; var order = [];
+    absent.forEach(function(r){
+      var t = irregularSubtype(r);
+      if (!groups[t]){ groups[t] = []; order.push(t); }
+      groups[t].push(r.dateStr);
+    });
+    order.sort(function(a,b){ return groups[b].length - groups[a].length; });
+
+    var html = order.map(function(t){
+      var dates = groups[t];
+      var shown = dates.slice(0,10).join(", ");
+      if (dates.length > 10) shown += " +" + (dates.length-10) + " more";
+      return '<tr><td>'+t+'</td><td class="mono-cell">'+dates.length+'</td><td class="irr-dates">'+shown+'</td></tr>';
+    }).join("");
+    document.getElementById("irregularBody").innerHTML = html || '<tr><td colspan="3" style="text-align:center;color:var(--muted);">No irregularities found.</td></tr>';
+  }
+
+  function buildTakeaways(rows, under, over, absent, worked, avgMin){
+    var items = [];
+    var total = rows.length;
+
+    if (under.length && over.length){
+      if (under.length > over.length){
+        items.push('You fell short of the 9:30 target on <span class="hl-warn">'+under.length+' of '+total+' days</span> ('+pct(under.length,total)+'%), versus <span class="hl">'+over.length+' days</span> that went over it.');
+      } else if (over.length > under.length){
+        items.push('You worked past the 9:30 target on <span class="hl">'+over.length+' of '+total+' days</span> ('+pct(over.length,total)+'%), versus <span class="hl-warn">'+under.length+' days</span> that fell short.');
+      } else {
+        items.push('An even split — <span class="hl-warn">'+under.length+' days</span> under target and <span class="hl">'+over.length+' days</span> over it.');
+      }
+    }
+
+    var byMonth = {}; var order = [];
+    rows.forEach(function(r){
+      if (!byMonth[r.monthKey]){ byMonth[r.monthKey] = { label: MONTH_NAMES[r.dateObj.getMonth()]+" "+r.dateObj.getFullYear(), min:[] }; order.push(r.monthKey); }
+      if (r.workMin !== null) byMonth[r.monthKey].min.push(r.workMin);
+    });
+    if (order.length > 1){
+      var firstM = byMonth[order[0]], lastM = byMonth[order[order.length-1]];
+      var favg = firstM.min.length ? Math.round(firstM.min.reduce(function(a,b){return a+b;},0)/firstM.min.length) : null;
+      var lavg = lastM.min.length ? Math.round(lastM.min.reduce(function(a,b){return a+b;},0)/lastM.min.length) : null;
+      if (favg !== null && lavg !== null && favg !== lavg){
+        var dir = lavg < favg ? "dropped" : "improved";
+        var cls = lavg < favg ? "hl-bad" : "hl";
+        items.push(firstM.label+' averaged <span class="hl">'+fmtHM(favg)+'</span>/day; by '+lastM.label+' it had <span class="'+cls+'">'+dir+' to '+fmtHM(lavg)+'</span>.');
+      }
+    }
+
+    if (under.length){
+      var worstShort = under.slice().sort(function(a,b){ return a.workMin-b.workMin; })[0];
+      items.push('The biggest shortfall was on <span class="hl-warn">'+worstShort.dateStr+'</span>, logging just '+fmtHM(worstShort.workMin)+' — '+fmtHM(THRESHOLD-worstShort.workMin)+' under target.');
+    }
+    if (over.length){
+      var worstOver = over.slice().sort(function(a,b){ return b.workMin-a.workMin; })[0];
+      items.push('The longest day was <span class="hl">'+worstOver.dateStr+'</span> at '+fmtHM(worstOver.workMin)+' — '+fmtHM(worstOver.workMin-THRESHOLD)+' over target.');
+    }
+
+    if (absent.length){
+      var subCounts = {};
+      absent.forEach(function(r){ var t = irregularSubtype(r); subCounts[t] = (subCounts[t]||0)+1; });
+      var topType = Object.keys(subCounts).sort(function(a,b){ return subCounts[b]-subCounts[a]; })[0];
+      items.push('<span class="hl-warn">'+absent.length+' days</span> had no usable work-hour record — mostly "'+topType+'" ('+subCounts[topType]+' days). Worth checking whether these were leave, WFH, or a punch-system gap.');
+    }
+
+    var flaggedUnder = under.filter(function(r){ return /less work/i.test(r.remark); }).length;
+    if (under.length){
+      items.push(pct(flaggedUnder, under.length)+'% of shortfall days were already flagged in the sheet\u2019s own remarks — the rest may be worth a manual look.');
+    }
+
+    document.getElementById("takeaways").innerHTML = items.map(function(t,i){
+      return '<li><span class="bullet">'+(i+1)+'</span><span>'+t+'</span></li>';
+    }).join("") || '<li><span class="bullet">–</span><span>Not enough data to summarize yet.</span></li>';
+  }
+
+  /* ================= CATEGORY DETAIL SCREEN ================= */
+  document.getElementById("catBack").addEventListener("click", function(){ showScreen("screen-dashboard"); });
+  document.getElementById("catMonthSelect").addEventListener("change", function(){
+    state.catMonth = this.value;
+    renderCategory();
+  });
+
+  function openCategory(cat){
+    state.activeCategory = cat;
+    state.catMonth = "all";
+    populateMonthSelect(document.getElementById("catMonthSelect"), state.months, "all");
+    renderCategory();
+    showScreen("screen-category");
+  }
+
+  function renderCategory(){
+    var cat = state.activeCategory;
+    var catRowsAll = state.rows.filter(function(r){ return r.category === cat; });
+    var catRows = filterByMonth(catRowsAll, state.catMonth);
+
+    document.getElementById("catTitle").textContent = CAT_LABEL[cat];
+    document.getElementById("catSub").textContent = state.name + " · " + (state.catMonth==="all" ? "all months" : monthLabelFor(state.catMonth));
+
+    var ctxEl = document.getElementById("catContext");
+    ctxEl.setAttribute("data-c", cat);
+    document.getElementById("catContextLabel").textContent = CAT_LABEL[cat];
+
+    document.getElementById("catCount").textContent = catRows.length;
+    document.getElementById("catPct").textContent = pct(catRowsAll.length, state.rows.length) + "%";
+    var worked = catRows.filter(function(r){ return r.workMin !== null; });
+    var avg = worked.length ? Math.round(worked.reduce(function(a,r){ return a+r.workMin; },0)/worked.length) : null;
+    document.getElementById("catAvg").textContent = avg !== null ? fmtHM(avg) : "—";
+
+    var varianceEl = document.getElementById("catVariance");
+    if (cat === "absent" || !worked.length){
+      varianceEl.textContent = "—";
+      varianceEl.style.color = "";
+    } else {
+      var totalVar = worked.reduce(function(a,r){ return a + (r.workMin - THRESHOLD); }, 0);
+      var sign = totalVar >= 0 ? "+" : "-";
+      varianceEl.textContent = sign + fmtHM(Math.abs(totalVar));
+      varianceEl.style.color = totalVar >= 0 ? "var(--c-over)" : "var(--c-least)";
+    }
+
+    document.getElementById("catChartTitle").textContent = CAT_LABEL[cat] + " — daily hours";
+    buildChart(document.getElementById("catChartTrack"), catRows);
+
+    document.getElementById("catTableTitle").textContent = CAT_LABEL[cat];
+    document.getElementById("catTableCount").textContent = catRows.length + (catRows.length===1 ? " row" : " rows");
+
+    var body = document.getElementById("catTableBody");
+    if (!catRows.length){
+      body.innerHTML = '<tr class="empty-row"><td colspan="6">No records in this view.</td></tr>';
+    } else {
+      body.innerHTML = catRows.slice().reverse().map(function(r){
+        return '<tr>' +
+          '<td class="mono-cell">'+escapeHtml(r.dateStr)+'</td>' +
+          '<td>'+escapeHtml(r.shift)+'</td>' +
+          '<td class="mono-cell">'+escapeHtml(r.inT)+'</td>' +
+          '<td class="mono-cell">'+escapeHtml(r.outT)+'</td>' +
+          '<td class="mono-cell">'+escapeHtml(r.workT)+'</td>' +
+          '<td class="remark-cell">'+(r.remark ? escapeHtml(r.remark) : "—")+'</td>' +
+        '</tr>';
+      }).join("");
+    }
+  }
+
+  /* ================= ALL DATA / FULL REPORT SCREEN ================= */
+  document.getElementById("allBack").addEventListener("click", function(){ showScreen("screen-dashboard"); });
+  document.getElementById("allMonthSelect").addEventListener("change", function(){
+    state.allMonth = this.value;
+    renderAllData();
+  });
+
+  document.getElementById("allCatFilter").addEventListener("click", function(e){
+    var btn = e.target.closest("button[data-f]");
+    if (!btn) return;
+    state.allCategory = btn.dataset.f;
+    document.querySelectorAll("#allCatFilter button").forEach(function(b){ b.classList.toggle("active", b === btn); });
+    renderAllData();
+  });
+
+  function openAllData(){
+    state.allMonth = "all";
+    state.allCategory = "all";
+    document.querySelectorAll("#allCatFilter button").forEach(function(b){ b.classList.toggle("active", b.dataset.f === "all"); });
+    populateMonthSelect(document.getElementById("allMonthSelect"), state.months, "all");
+    renderAllData();
+    showScreen("screen-alldata");
+  }
+
+  function getAllFilteredRows(){
+    var monthRows = filterByMonth(state.rows, state.allMonth);
+    var rows = state.allCategory === "all" ? monthRows : monthRows.filter(function(r){ return r.category === state.allCategory; });
+    return { monthRows: monthRows, rows: rows };
+  }
+
+  function renderAllData(){
+    var scope = getAllFilteredRows();
+    var monthRows = scope.monthRows;
+    var rows = scope.rows;
+    var b = bucket(monthRows);
+
+    var catLabel = state.allCategory === "all" ? "" : " · " + CAT_LABEL[state.allCategory].split(" ")[0] + " only";
+    document.getElementById("allSub").textContent = state.name + " · " + (state.allMonth==="all" ? (state.rows.length ? state.rows[0].dateStr+" – "+state.rows[state.rows.length-1].dateStr : "—") : monthLabelFor(state.allMonth)) + catLabel;
+    document.getElementById("allChartSub").textContent = "Dashed line marks the 9h 30m target · drag to scroll" + (state.allMonth==="all" ? "" : " · "+monthLabelFor(state.allMonth)) + catLabel;
+
+    document.getElementById("mTotal").textContent = monthRows.length;
+    document.getElementById("mAvg").textContent = fmtHM(b.avgMin);
+    document.getElementById("mShortage").textContent = b.under.length;
+    document.getElementById("mOver").textContent = b.over.length;
+    document.getElementById("mAbsent").textContent = b.absent.length;
+
+    var best = b.worked.slice().sort(function(a,b2){ return b2.workMin-a.workMin; })[0];
+    var worst = b.worked.slice().sort(function(a,b2){ return a.workMin-b2.workMin; })[0];
+    document.getElementById("mBest").textContent = best ? best.dateStr+" · "+fmtHM(best.workMin) : "—";
+    document.getElementById("mWorst").textContent = worst ? worst.dateStr+" · "+fmtHM(worst.workMin) : "—";
+
+    document.getElementById("allFilterCount").textContent = rows.length + (rows.length===1?" row":" rows") + " in this filter";
+
+    buildChart(document.getElementById("allChartTrack"), rows);
+    buildDonut(document.getElementById("allDonutWrap"), monthRows.length, b.under.length, b.over.length, b.absent.length);
+
+    document.getElementById("allTableCount").textContent = rows.length + (rows.length===1?" row":" rows");
+    var body = document.getElementById("allTableBody");
+    if (!rows.length){
+      body.innerHTML = '<tr class="empty-row"><td colspan="8">No records in this view.</td></tr>';
+    } else {
+      body.innerHTML = rows.slice().reverse().map(function(r){
+        var diffHtml = "—";
+        if (r.workMin !== null){
+          var d = r.workMin - THRESHOLD;
+          diffHtml = '<span class="'+(d>=0?"diff-pos":"diff-neg")+'">'+(d>=0?"+":"-")+fmtHM(Math.abs(d))+'</span>';
+        }
+        var pillClass = r.category;
+        var pillLabel = r.category === "under" ? "Under" : (r.category === "over" ? "Over" : "Absent");
+        var tag = "";
+        if (best && r === best) tag = '<span class="tag-extreme">best</span>';
+        else if (worst && r === worst) tag = '<span class="tag-extreme">worst</span>';
+        return '<tr>' +
+          '<td class="mono-cell">'+escapeHtml(r.dateStr)+'</td>' +
+          '<td>'+escapeHtml(r.shift)+'</td>' +
+          '<td class="mono-cell">'+escapeHtml(r.inT)+'</td>' +
+          '<td class="mono-cell">'+escapeHtml(r.outT)+'</td>' +
+          '<td class="mono-cell">'+escapeHtml(r.workT)+'</td>' +
+          '<td class="mono-cell">'+diffHtml+'</td>' +
+          '<td><span class="cat-pill '+pillClass+'"><i></i>'+pillLabel+'</span>'+tag+'</td>' +
+          '<td class="remark-cell">'+(r.remark ? escapeHtml(r.remark) : "—")+'</td>' +
+        '</tr>';
+      }).join("");
+    }
+  }
+
+  /* ---------- PDF export ---------- */
+  document.getElementById("downloadPdfBtn").addEventListener("click", function(){
+    generatePdf();
+  });
+
+  function performanceVerdict(rows, under, over, absent){
+    var total = rows.length || 1;
+    var underPct = pct(under.length, total);
+    var overPct = pct(over.length, total);
+    var absentPct = pct(absent.length, total);
+    if (underPct >= 50){
+      return "Needs attention — " + underPct + "% of logged days fell short of the 9:30 target. Consider reviewing what's pulling hours down on shortfall days.";
+    }
+    if (overPct >= 50){
+      return "High output — " + overPct + "% of logged days met or exceeded the 9:30 target, though sustained overtime at this level is worth keeping an eye on.";
+    }
+    if (absentPct >= 30){
+      return "Attendance gaps stand out — " + absentPct + "% of the range has no usable punch record. Worth reconciling with leave records or the punch system.";
+    }
+    return "Fairly balanced — hours are reasonably split around the 9:30 target with no single pattern dominating.";
+  }
+
+  /* draws a colorful donut (circle chart only) on an offscreen canvas and returns a PNG data URL */
+  function drawDonutImage(under, over, absent){
+    var size = 340, scale = 3;
+    var canvas = document.createElement("canvas");
+    canvas.width = size * scale; canvas.height = size * scale;
+    var ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    var cx = size/2, cy = size/2, rOuter = size/2 - 8, rInner = rOuter * 0.6;
+    var total = under + over + absent;
+
+    if (!total){
+      ctx.beginPath(); ctx.arc(cx, cy, rOuter, 0, Math.PI*2);
+      ctx.fillStyle = "#e6e9ee"; ctx.fill();
+    } else {
+      var segs = [
+        {v:under, c:"#e8940f"},
+        {v:over, c:"#0fa876"},
+        {v:absent, c:"#e0304f"}
+      ];
+      var start = -Math.PI/2;
+      segs.forEach(function(seg){
+        if (!seg.v) return;
+        var angle = seg.v/total*Math.PI*2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, rOuter, start, start + angle);
+        ctx.closePath();
+        ctx.fillStyle = seg.c;
+        ctx.fill();
+        ctx.lineWidth = 2*scale/scale;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+        start += angle;
+      });
+    }
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath(); ctx.arc(cx, cy, rInner, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    return canvas.toDataURL("image/png");
+  }
+
+  function generatePdf(){
+    var btn = document.getElementById("downloadPdfBtn");
+    if (!window.jspdf){
+      alert("PDF export library didn't load — check your internet connection and try again.");
+      return;
+    }
+    btn.disabled = true;
+    var originalLabel = btn.textContent;
+    btn.textContent = "Preparing PDF…";
+
+    try {
+      var scope = getAllFilteredRows();
+      var rows = scope.rows;
+      var b = bucket(rows);
+      var total = rows.length;
+
+      var shortageMin = b.under.reduce(function(a,r){ return a + (THRESHOLD - r.workMin); }, 0);
+      var overtimeMin = b.over.reduce(function(a,r){ return a + (r.workMin - THRESHOLD); }, 0);
+      var best = b.worked.slice().sort(function(a,b2){ return b2.workMin-a.workMin; })[0];
+      var worst = b.worked.slice().sort(function(a,b2){ return a.workMin-b2.workMin; })[0];
+
+      /* fmtHM shows "H:MM" — this appends " hrs" for the PDF so hour values are unambiguous */
+      function fmtHMU(min){
+        var s = fmtHM(min);
+        return s === "-" ? s : s + " hrs";
+      }
+
+      var jsPDFCtor = window.jspdf.jsPDF;
+      var doc = new jsPDFCtor({ unit: "pt", format: "a4" });
+      var pageW = doc.internal.pageSize.getWidth();
+      var pageH = doc.internal.pageSize.getHeight();
+      var margin = 36;
+
+      // ---------- palette: clean, restrained report palette ----------
+      var C_BRAND      = [8,84,66],     C_BRAND_LT  = [16,140,108];   // header / chrome only — not reused for data
+      var C_NEUTRAL    = [71,85,105],   C_NEUTRAL_BG= [234,237,242];  // informational, non-judgemental figures
+      var C_POS        = [15,148,106],  C_POS_BG    = [221,246,235]; // positive — over target, more hours worked
+      var C_WARN       = [180,110,10],  C_WARN_BG   = [253,239,216]; // caution — under target / shortfall
+      var C_NEG        = [199,38,62],   C_NEG_BG    = [253,225,231]; // negative — absent, shortage, worst day
+      var C_INK        = [26,30,38],    C_MUTED     = [107,116,131], C_MUTED_LT=[152,159,172];
+      var C_PAGE_BG    = [248,249,252];
+      var C_WHITE      = [255,255,255];
+      var C_LINE       = [227,231,238];
+      var C_ACCENT     = [16,140,108];
+
+      // page background
+      doc.setFillColor.apply(doc, C_PAGE_BG);
+      doc.rect(0, 0, pageW, pageH, "F");
+
+      /* ---------- soft drop-shadow helper for cards ---------- */
+      function shadowRect(x, y, w, h, r){
+        doc.setFillColor(216,220,227);
+        doc.roundedRect(x + 1, y + 2, w, h, r, r, "F");
+      }
+
+      /* ================= HEADER ================= */
+      var headerH = 96;
+      doc.setFillColor.apply(doc, C_BRAND);
+      doc.rect(0, 0, pageW, headerH, "F");
+      doc.setFillColor.apply(doc, C_BRAND_LT);
+      doc.rect(0, headerH - 3, pageW, 3, "F");
+
+      // brand mark: dot + eyebrow
+      doc.setFillColor(255,255,255);
+      doc.circle(margin + 4, 22, 3.2, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(210,232,224);
+      doc.text("T I M E   L E D G E R", margin + 14, 25);
+
+      doc.setFont("helvetica", "bold"); doc.setFontSize(21); doc.setTextColor(255,255,255);
+      doc.text("Attendance Report", margin, 51);
+
+      var rangeTxt = state.allMonth === "all"
+        ? (rows.length ? rows[0].dateStr + " – " + rows[rows.length-1].dateStr : "—")
+        : monthLabelFor(state.allMonth);
+      if (state.allCategory !== "all") rangeTxt += "   ·   " + CAT_LABEL[state.allCategory] + " only";
+      doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(214,232,226);
+      doc.text(state.name + "   ·   " + rangeTxt, margin, 69);
+      doc.setFontSize(9); doc.setTextColor(180,206,198);
+      doc.text("Baseline target 9h 30m / day   ·   Generated " + new Date().toLocaleDateString("en-GB", {day:"2-digit", month:"short", year:"numeric"}), margin, 83);
+
+      var y = headerH + 28;
+
+      /* ---------- section eyebrow helper ---------- */
+      function sectionLabel(text, yy){
+        doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor.apply(doc, C_MUTED);
+        doc.text(text.toUpperCase(), margin, yy);
+        doc.setDrawColor.apply(doc, C_LINE); doc.setLineWidth(1);
+        var tw = doc.getTextWidth(text.toUpperCase());
+        doc.line(margin + tw + 8, yy - 3, pageW - margin, yy - 3);
+      }
+
+      sectionLabel("Overview", y);
+      y += 14;
+
+      /* ---------- stat cards (2 rows x 3) ---------- */
+      function statCard(x, w, label, value, rgb, bgRgb){
+        var h = 64;
+        shadowRect(x, y, w, h, 9);
+        doc.setFillColor.apply(doc, bgRgb);
+        doc.roundedRect(x, y, w, h, 9, 9, "F");
+        doc.setFillColor.apply(doc, rgb);
+        doc.roundedRect(x, y, 4, h, 2, 2, "F");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor.apply(doc, rgb);
+        doc.text(String(value), x + 16, y + 31);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(8.6); doc.setTextColor.apply(doc, C_MUTED);
+        var wrapped = doc.splitTextToSize(label, w - 26);
+        doc.text(wrapped, x + 16, y + 47);
+      }
+
+      var gap = 12;
+      var cardW = (pageW - margin*2 - gap*2) / 3;
+      var row1 = [
+        { label:"Days logged", value: total, rgb: C_NEUTRAL, bg: C_NEUTRAL_BG },
+        { label:"Average / day", value: fmtHMU(b.avgMin), rgb: C_NEUTRAL, bg: C_NEUTRAL_BG },
+        { label:"Over-worked days", value: b.over.length, rgb: C_POS, bg: C_POS_BG }
+      ];
+      row1.forEach(function(c, i){ statCard(margin + i*(cardW+gap), cardW, c.label, c.value, c.rgb, c.bg); });
+      y += 64 + 12;
+
+      var row2 = [
+        { label:"Not worked / absent", value: b.absent.length, rgb: C_NEG, bg: C_NEG_BG },
+        { label:"Short hours (total)", value: (shortageMin ? "-" : "") + fmtHMU(shortageMin), rgb: C_NEG, bg: C_NEG_BG },
+        { label:"Overtime hours (total)", value: (overtimeMin ? "+" : "") + fmtHMU(overtimeMin), rgb: C_POS, bg: C_POS_BG }
+      ];
+      row2.forEach(function(c, i){ statCard(margin + i*(cardW+gap), cardW, c.label, c.value, c.rgb, c.bg); });
+      y += 64 + 24;
+
+      /* ---------- highest / lowest working day callouts ---------- */
+      var calloutW = (pageW - margin*2 - gap) / 2;
+      var calloutH = 46;
+      function callout(x, title, r, rgb, bg, pointsUp){
+        shadowRect(x, y, calloutW, calloutH, 9);
+        doc.setFillColor.apply(doc, bg);
+        doc.roundedRect(x, y, calloutW, calloutH, 9, 9, "F");
+        doc.setDrawColor.apply(doc, rgb);
+        doc.setLineWidth(1);
+        doc.roundedRect(x, y, calloutW, calloutH, 9, 9, "S");
+        // small vector arrow (avoids unicode glyphs missing from the standard PDF font)
+        doc.setFillColor.apply(doc, rgb);
+        var ax = x + 15, ay = y + 14, aw = 6, ah = 5;
+        if (pointsUp){
+          doc.triangle(ax, ay, ax - aw/2, ay + ah, ax + aw/2, ay + ah, "F");
+        } else {
+          doc.triangle(ax, ay + ah, ax - aw/2, ay, ax + aw/2, ay, "F");
+        }
+        doc.setFont("helvetica", "bold"); doc.setFontSize(8.6); doc.setTextColor.apply(doc, rgb);
+        doc.text(title, x + 24, y + 17);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor.apply(doc, C_INK);
+        doc.text(r ? (r.dateStr + "   ·   " + fmtHMU(r.workMin)) : "—", x + 14, y + 35);
+      }
+      callout(margin, "HIGHEST WORKING HOURS", best, C_POS, C_POS_BG, true);
+      callout(margin + calloutW + gap, "LOWEST WORKING DAY — WORST", worst, C_NEG, C_NEG_BG, false);
+      y += calloutH + 30;
+
+      /* ================= CATEGORY SPLIT ================= */
+      sectionLabel("Category split", y);
+      y += 16;
+
+      /* ---------- donut chart (circle only) + legend ---------- */
+      var donutSize = 150;
+      var donutImg = drawDonutImage(b.under.length, b.over.length, b.absent.length);
+      var donutX = margin;
+      shadowRect(donutX - 10, y - 10, donutSize + 20, donutSize + 20, 12);
+      doc.setFillColor.apply(doc, C_WHITE);
+      doc.roundedRect(donutX - 10, y - 10, donutSize + 20, donutSize + 20, 12, 12, "F");
+      doc.addImage(donutImg, "PNG", donutX, y, donutSize, donutSize);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor.apply(doc, C_INK);
+      doc.text(String(total), donutX + donutSize/2, y + donutSize/2 - 3, {align:"center"});
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor.apply(doc, C_MUTED);
+      doc.text("DAYS", donutX + donutSize/2, y + donutSize/2 + 9, {align:"center"});
+
+      var legX = donutX + donutSize + 46;
+      var legY = y + 14;
+      var legend = [
+        {label:"Under 9:30 hrs — shortfall", val:b.under.length, rgb:C_WARN, bg:C_WARN_BG},
+        {label:"Over 9:30 hrs — positive", val:b.over.length, rgb:C_POS, bg:C_POS_BG},
+        {label:"Absent — negative", val:b.absent.length, rgb:C_NEG, bg:C_NEG_BG}
+      ];
+      doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.setTextColor.apply(doc, C_INK);
+      doc.text("Share of days in view", legX, y - 2);
+      legend.forEach(function(l, i){
+        var ly = legY + 26 + i*28;
+        doc.setFillColor.apply(doc, l.bg);
+        doc.roundedRect(legX, ly - 13, pageW - margin - legX, 22, 6, 6, "F");
+        doc.setFillColor.apply(doc, l.rgb);
+        doc.roundedRect(legX + 8, ly - 5, 10, 10, 2, 2, "F");
+        doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor.apply(doc, C_INK);
+        doc.text(l.label, legX + 24, ly + 3);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor.apply(doc, l.rgb);
+        doc.text(String(l.val) + " days (" + pct(l.val, total) + "%)", pageW - margin - 8, ly + 3, {align:"right"});
+      });
+      y += donutSize + 30;
+
+      /* ================= PERFORMANCE VERDICT ================= */
+      sectionLabel("Performance summary", y);
+      y += 16;
+
+      var verdict = performanceVerdict(rows, b.under, b.over, b.absent);
+      var verdictLines = doc.splitTextToSize(verdict, pageW - margin*2 - 32);
+      var verdictH = 26 + verdictLines.length * 13.5;
+      shadowRect(margin, y, pageW - margin*2, verdictH, 10);
+      doc.setFillColor.apply(doc, C_WHITE);
+      doc.roundedRect(margin, y, pageW - margin*2, verdictH, 10, 10, "F");
+      doc.setFillColor.apply(doc, C_BRAND);
+      doc.roundedRect(margin, y, 5, verdictH, 2.5, 2.5, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor.apply(doc, C_BRAND);
+      doc.text("VERDICT", margin + 18, y + 18);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor.apply(doc, C_INK);
+      doc.text(verdictLines, margin + 18, y + 34);
+      y += verdictH + 18;
+
+      /* ================= FOOTER ================= */
+      var footerY = pageH - 26;
+      doc.setDrawColor.apply(doc, C_LINE); doc.setLineWidth(0.75);
+      doc.line(margin, footerY - 10, pageW - margin, footerY - 10);
+      doc.setFillColor.apply(doc, C_ACCENT);
+      doc.circle(margin + 3, footerY - 1, 2.6, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor.apply(doc, C_MUTED);
+      doc.text("TIME LEDGER", margin + 11, footerY + 2);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor.apply(doc, C_MUTED_LT);
+      doc.text("Designed by Pruthviraj", margin + 78, footerY + 2);
+      doc.text("Page 1 of 1   ·   " + new Date().toLocaleString("en-GB", {day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"}), pageW - margin, footerY + 2, {align:"right"});
+
+      var fname = (state.name || "time-ledger").trim().replace(/\s+/g, "-").toLowerCase() + "-report.pdf";
+      doc.save(fname);
+      btn.disabled = false; btn.textContent = originalLabel;
+    } catch(err){
+      btn.disabled = false; btn.textContent = originalLabel;
+      alert("Couldn't generate the PDF. Please try again.");
+    }
+  }
+
+})();
+</script>
+</body>
+</html>
