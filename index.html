@@ -219,7 +219,7 @@
   .section-eyebrow::after{content:'';flex:1;border-top:1px solid var(--line);}
 
   /* ================= stat / metric tiles ================= */
-  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
   .stat-tile{
     position:relative;text-align:left;cursor:pointer;overflow:hidden;
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -245,6 +245,16 @@
   .stat-tile.avg::before{background:var(--accent);}
   .stat-tile.avg .swatch{background:var(--accent);box-shadow:0 0 8px rgba(47,217,143,.65);}
   .stat-tile.avg .count{color:var(--accent);}
+  .stat-tile.extra{cursor:default;}
+  .stat-tile.extra:hover{transform:none;border-color:var(--line);box-shadow:none;}
+  .stat-tile.extra::before{background:var(--c-over);}
+  .stat-tile.extra .swatch{background:var(--c-over);box-shadow:0 0 8px rgba(46,230,166,.65);}
+  .stat-tile.extra .count{color:var(--c-over);}
+  .stat-tile.less{cursor:default;}
+  .stat-tile.less:hover{transform:none;border-color:var(--line);box-shadow:none;}
+  .stat-tile.less::before{background:var(--c-under);}
+  .stat-tile.less .swatch{background:var(--c-under);box-shadow:0 0 8px rgba(255,176,32,.65);}
+  .stat-tile.less .count{color:var(--c-under);}
 
   .report-tile{
     margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;
@@ -546,6 +556,18 @@
         <div class="label">Average per day</div>
         <div class="hint" id="avgHint">Across logged days</div>
       </div>
+      <div class="stat-tile extra">
+        <div class="swatch"></div>
+        <div class="count mono" id="totalExtra">0:00</div>
+        <div class="label">Total extra hours worked</div>
+        <div class="hint">Sum of time over 9:30 target</div>
+      </div>
+      <div class="stat-tile less">
+        <div class="swatch"></div>
+        <div class="count mono" id="totalLess">0:00</div>
+        <div class="label">Total less hours worked</div>
+        <div class="hint">Sum of time under 9:30 target</div>
+      </div>
     </div>
 
     <div class="report-tile" id="reportTile" tabindex="0">
@@ -748,6 +770,8 @@
       <div class="metric-tile"><div class="v" id="mAbsent" style="color:var(--c-absent);">0</div><div class="l">Absent / not punched</div></div>
       <div class="metric-tile"><div class="v" id="mBest" style="color:var(--accent);font-size:16px;">—</div><div class="l">Best day (most hours)</div></div>
       <div class="metric-tile"><div class="v" id="mWorst" style="color:var(--c-least);font-size:16px;">—</div><div class="l">Worst day (least hours)</div></div>
+      <div class="metric-tile"><div class="v" id="mExtra" style="color:var(--c-over);">0:00</div><div class="l">Total extra hours worked</div></div>
+      <div class="metric-tile"><div class="v" id="mLess" style="color:var(--c-under);">0:00</div><div class="l">Total less hours worked</div></div>
     </div>
 
     <div class="section-eyebrow"><span>Filter</span></div>
@@ -1211,6 +1235,11 @@
     document.getElementById("avgHint").textContent = "Across " + b.worked.length + " logged day" + (b.worked.length===1?"":"s");
     document.getElementById("reportCount").textContent = rows.length + " total rows";
 
+    var totalExtraMin = b.worked.reduce(function(a,r){ return a + (r.workMin > THRESHOLD ? r.workMin - THRESHOLD : 0); }, 0);
+    var totalLessMin = b.worked.reduce(function(a,r){ return a + (r.workMin < THRESHOLD ? THRESHOLD - r.workMin : 0); }, 0);
+    document.getElementById("totalExtra").textContent = fmtHM(totalExtraMin);
+    document.getElementById("totalLess").textContent = fmtHM(totalLessMin);
+
     buildDonut(document.getElementById("dashDonutWrap"), rows.length, b.under.length, b.over.length, b.absent.length);
     buildChart(document.getElementById("dashChartTrack"), rows);
     buildMonthly(rows);
@@ -1503,6 +1532,11 @@
     var worst = b.worked.slice().sort(function(a,b2){ return a.workMin-b2.workMin; })[0];
     document.getElementById("mBest").textContent = best ? best.dateStr+" · "+fmtHM(best.workMin) : "—";
     document.getElementById("mWorst").textContent = worst ? worst.dateStr+" · "+fmtHM(worst.workMin) : "—";
+
+    var mExtraMin = b.worked.reduce(function(a,r){ return a + (r.workMin > THRESHOLD ? r.workMin - THRESHOLD : 0); }, 0);
+    var mLessMin = b.worked.reduce(function(a,r){ return a + (r.workMin < THRESHOLD ? THRESHOLD - r.workMin : 0); }, 0);
+    document.getElementById("mExtra").textContent = fmtHM(mExtraMin);
+    document.getElementById("mLess").textContent = fmtHM(mLessMin);
 
     document.getElementById("allFilterCount").textContent = rows.length + (rows.length===1?" row":" rows") + " in this filter";
 
